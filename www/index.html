@@ -564,7 +564,7 @@ body{font-family:var(--font);background:var(--bg-dark);color:var(--text-primary)
 <script>
 'use strict';
 /* ============================================================
-   Lokkhipur — Secure Chat (Version 1) — Call Fixed
+   Lokkhipur — Secure Chat (Version 1) — HTTP+HTTPS Support
    ============================================================ */
 
 const allUsers=[
@@ -586,6 +586,13 @@ const CONFIG={user:me,peerPrefix:'lokkhipur-v1-'};
 let allContacts=allUsers.filter(u=>u.userId!==me.userId);
 let customContacts=[];
 let groups=[];
+
+// ✅ HTTPS চেক
+function isSecureContext(){
+  return location.protocol === 'https:' ||
+         location.hostname === 'localhost' ||
+         location.hostname === '127.0.0.1';
+}
 
 let state={
   currentUser:{...me,status:'',profilePic:null},
@@ -983,8 +990,25 @@ function playPattern(type){
   if(type==='incoming'){[0,0.5].forEach(o=>{const osc=ringtoneCtx.createOscillator(),gain=ringtoneCtx.createGain();osc.connect(gain);gain.connect(ringtoneCtx.destination);osc.frequency.value=900;gain.gain.setValueAtTime(0,now+o);gain.gain.linearRampToValueAtTime(0.28,now+o+0.02);gain.gain.linearRampToValueAtTime(0.28,now+o+0.35);gain.gain.linearRampToValueAtTime(0,now+o+0.4);osc.start(now+o);osc.stop(now+o+0.45);});}
   else{const osc=ringtoneCtx.createOscillator(),gain=ringtoneCtx.createGain();osc.connect(gain);gain.connect(ringtoneCtx.destination);osc.frequency.value=450;gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(0.15,now+0.05);gain.gain.linearRampToValueAtTime(0.15,now+0.9);gain.gain.linearRampToValueAtTime(0,now+1.0);osc.start(now);osc.stop(now+1.05);}
 }
-function startIncomingRingtone(){stopAllRingtones();try{ringtoneCtx=new (window.AudioContext||window.webkitAudioContext)();playPattern('incoming');ringtoneInterval=setInterval(()=>playPattern('incoming'),2000);const vib=()=>{if(navigator.vibrate)navigator.vibrate([400,200,400,1000]);};vib();vibrationInterval=setInterval(vib,2000);}catch(e){}}
-function startOutgoingRingtone(){stopAllRingtones();try{ringtoneCtx=new (window.AudioContext||window.webkitAudioContext)();playPattern('outgoing');ringtoneInterval=setInterval(()=>playPattern('outgoing'),3000);}catch(e){}}
+function startIncomingRingtone(){
+  stopAllRingtones();
+  try{
+    ringtoneCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(ringtoneCtx.state==='suspended')ringtoneCtx.resume().catch(()=>{});
+    playPattern('incoming');
+    ringtoneInterval=setInterval(()=>playPattern('incoming'),2000);
+  }catch(e){console.warn('ringtone fail:',e);}
+  try{const vib=()=>{if(navigator.vibrate)navigator.vibrate([400,200,400,1000]);};vib();vibrationInterval=setInterval(vib,2000);}catch(e){}
+}
+function startOutgoingRingtone(){
+  stopAllRingtones();
+  try{
+    ringtoneCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(ringtoneCtx.state==='suspended')ringtoneCtx.resume().catch(()=>{});
+    playPattern('outgoing');
+    ringtoneInterval=setInterval(()=>playPattern('outgoing'),3000);
+  }catch(e){console.warn('ringtone fail:',e);}
+}
 function playConnectedTone(){try{const ctx=new (window.AudioContext||window.webkitAudioContext)();const now=ctx.currentTime;[800,1200].forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.frequency.value=f;g.gain.setValueAtTime(0,now+i*0.12);g.gain.linearRampToValueAtTime(0.2,now+i*0.12+0.02);g.gain.linearRampToValueAtTime(0,now+i*0.12+0.1);o.start(now+i*0.12);o.stop(now+i*0.12+0.12);});setTimeout(()=>ctx.close(),500);}catch(e){}}
 function playEndTone(){try{const ctx=new (window.AudioContext||window.webkitAudioContext)();const now=ctx.currentTime;const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.frequency.value=500;o.frequency.exponentialRampToValueAtTime(200,now+0.3);g.gain.setValueAtTime(0.2,now);g.gain.linearRampToValueAtTime(0,now+0.35);o.start(now);o.stop(now+0.4);setTimeout(()=>ctx.close(),500);}catch(e){}}
 function playMessageSendTone(){try{const ctx=new (window.AudioContext||window.webkitAudioContext)();const now=ctx.currentTime;const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.frequency.value=1400;g.gain.setValueAtTime(0.1,now);g.gain.linearRampToValueAtTime(0,now+0.08);o.start(now);o.stop(now+0.1);setTimeout(()=>ctx.close(),200);}catch(e){}}
@@ -1290,6 +1314,9 @@ let mediaRecorder=null,audioChunks=[],isRecording=false;
 async function toggleVoiceRecord(){
   const btn=document.getElementById('micBtn');
   if(isRecording){if(mediaRecorder&&mediaRecorder.state==='recording')mediaRecorder.stop();return;}
+  if(!isSecureContext()){
+    showToast('🔒 HTTPS প্রয়োজন','error');return;
+  }
   try{
     const stream=await navigator.mediaDevices.getUserMedia({audio:true});
     mediaRecorder=new MediaRecorder(stream);audioChunks=[];
@@ -1316,7 +1343,7 @@ async function toggleVoiceRecord(){
 function scrollToBottom(){const c=document.getElementById('chatMessages');c.scrollTop=c.scrollHeight;document.getElementById('scrollBottomBtn').classList.remove('show');}
 
 /* ============================================================
-   CALL SYSTEM (FIXED) — PeerJS Promise + Metadata + ICE
+   CALL SYSTEM — PeerJS Promise + Metadata + ICE
    ============================================================ */
 let peer=null,currentCall=null,incomingCall=null;
 let localAudioStream=null,localVideoStream=null,remoteStream=null,screenStream=null;
@@ -1398,8 +1425,16 @@ async function answerIncomingCall(){
   if(!incomingCall)return;
   stopAllRingtones();
   document.getElementById('incomingCallOverlay').classList.remove('active');
+  if(!isSecureContext()){
+    alert('🔒 HTTPS প্রয়োজন!\n\nকল ধরতে হলে HTTPS লিংক ব্যবহার করুন।\n\nNetlify Drop বা GitHub Pages-এ হোস্ট করুন।');
+    rejectIncomingCall();
+    return;
+  }
   try{
-    localAudioStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+    localAudioStream=await navigator.mediaDevices.getUserMedia({
+      audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},
+      video:false
+    });
     const call=incomingCall;incomingCall=null;
     call.answer(localAudioStream);
     currentCall=call;
@@ -1409,7 +1444,11 @@ async function answerIncomingCall(){
     showCallUI('connected');
   }catch(err){
     console.warn('answer fail:',err);
-    showToast('⚠️ মাইক্রোফোন অ্যাক্সেস নেই','error');
+    if(err.name==='NotAllowedError'){
+      showToast('🎤 মাইক permission দিন','error');
+    }else{
+      showToast('⚠️ কল ধরতে ব্যর্থ','error');
+    }
     rejectIncomingCall();
   }
 }
@@ -1428,21 +1467,61 @@ async function startAudioCall(){
   }
   if(currentCall){showToast('⚠️ চলমান কল আছে','warn');return;}
   if(incomingCall){showToast('⚠️ ইনকামিং কল চলছে','warn');return;}
+
+  // ✅ HTTPS চেক
+  if(!isSecureContext()){
+    alert('🔒 HTTPS প্রয়োজন!\n\n' +
+          'মাইক্রোফোন/ক্যামেরার জন্য নিরাপদ সংযোগ (HTTPS) বাধ্যতামূলক।\n\n' +
+          '💡 সমাধান:\n' +
+          '১. app.netlify.com/drop খুলুন → index.html ড্র্যাগ করুন\n' +
+          '২. GitHub Pages-এ হোস্ট করুন\n' +
+          '৩. Vercel / Cloudflare Pages ব্যবহার করুন\n\n' +
+          'তারপর সেই https:// লিংক দিয়ে খুলুন।');
+    showToast('🔒 HTTPS প্রয়োজন','error');
+    return;
+  }
+
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    alert('❌ আপনার ব্রাউজার মাইক্রোফোন সাপোর্ট করে না।\n\nChrome বা Firefox-এর সর্বশেষ ভার্শন ব্যবহার করুন।');
+    showToast('❌ মাইক সাপোর্ট নেই','error');
+    return;
+  }
+
   const contact=getAllContacts().find(c=>c.id===state.activeChatUser);
   if(!contact){showToast('❌ কন্টাক্ট পাওয়া যায়নি','error');return;}
   callPeerUser=contact;
+
+  showToast('🔌 কল প্রস্তুত হচ্ছে...','warn');
   const p=await initPeer();
   if(!p||!peerReady){
-    showToast('❌ নেটওয়ার্ক সমস্যা, আবার চেষ্টা করুন','error');
+    showToast('❌ সার্ভারে সংযোগ ব্যর্থ, আবার চেষ্টা করুন','error');
     return;
   }
+
   try{
-    localAudioStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+    localAudioStream=await navigator.mediaDevices.getUserMedia({
+      audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},
+      video:false
+    });
   }catch(err){
-    showToast('⚠️ মাইক্রোফোন অনুমতি দিন','error');return;
+    console.warn('Mic error:',err);
+    if(err.name==='NotAllowedError'||err.name==='PermissionDeniedError'){
+      alert('🎤 মাইক্রোফোন অনুমতি দেওয়া হয়নি!\n\n' +
+            'ব্রাউজার সেটিংসে গিয়ে:\n' +
+            '• Site Settings → Microphone → Allow\n' +
+            'তারপর আবার চেষ্টা করুন।');
+      showToast('🎤 মাইক permission দিন','error');
+    }else if(err.name==='NotFoundError'){
+      showToast('🎤 কোনো মাইক পাওয়া যায়নি','error');
+    }else{
+      showToast('⚠️ মাইক সমস্যা: '+err.name,'error');
+    }
+    return;
   }
+
   const targetPeerId=peerIdFor(contact.userId);
   console.log('📞 Calling:',targetPeerId);
+
   try{
     const call=peer.call(targetPeerId,localAudioStream,{
       metadata:{
@@ -1466,10 +1545,10 @@ async function startAudioCall(){
         addCallHistory('missed',contact);
         endCall(true);
       }
-    },30000);
+    },45000);
   }catch(err){
     console.warn('call fail:',err);
-    showToast('❌ কল ব্যর্থ','error');
+    showToast('❌ কল ব্যর্থ: '+(err.message||err),'error');
     if(localAudioStream){localAudioStream.getTracks().forEach(t=>t.stop());localAudioStream=null;}
   }
 }
@@ -1797,7 +1876,7 @@ function toggleShakePanic(){state.settings.shakePanic=!state.settings.shakePanic
 function toggleReadReceipts(){state.settings.readReceipts=!state.settings.readReceipts;document.getElementById('toggleReadReceipts').classList.toggle('on',state.settings.readReceipts);saveSettings();}
 function toggleTypingIndicator(){state.settings.typingIndicator=!state.settings.typingIndicator;document.getElementById('toggleTyping').classList.toggle('on',state.settings.typingIndicator);saveSettings();}
 function toggleLastSeen(){state.settings.lastSeen=!state.settings.lastSeen;document.getElementById('toggleLastSeen').classList.toggle('on',state.settings.lastSeen);saveSettings();}
-function toggleProfilePhotoPrivacy(){state.settings.profilePhotoPrivacy=!state.settings.profilePhotoPrivacy;document.getElementById('toggleProfilePic').classList.toggle('on',state.settings.profilePhotoPrivacy);saveSettings();}
+function toggleProfilePhotoPrivacy(){state.settings.profilePhotoPrivacy=!state.settings.profilePhotoPrivacy;document.getElementById('toggleProfilePic').classList.toggle('on',state.settings.photoPrivacy);saveSettings();}
 function toggleTrustedOnly(){state.settings.trustedOnly=!state.settings.trustedOnly;document.getElementById('toggleTrustedOnly').classList.toggle('on',state.settings.trustedOnly);saveSettings();}
 function toggleDND(){state.settings.dnd=!state.settings.dnd;document.getElementById('toggleDND').classList.toggle('on',state.settings.dnd);saveSettings();}
 function setSilentHours(){const v=prompt('সাইলেন্ট আওয়ার্স (HH:MM-HH:MM):',state.settings.silentStart+'-'+state.settings.silentEnd);if(!v)return;const p=v.split('-');if(p.length!==2)return;state.settings.silentStart=p[0].trim();state.settings.silentEnd=p[1].trim();saveSettings();const sh=document.getElementById('silentHoursLabel');if(sh)sh.textContent=state.settings.silentStart+'-'+state.settings.silentEnd;}
@@ -2099,8 +2178,18 @@ window.addEventListener('beforeunload',()=>{
   if(peer)try{peer.destroy();}catch(e){}
 });
 
+/* ============ INIT ============ */
 document.addEventListener('DOMContentLoaded',async()=>{
   loadSettings();applyTheme();applyFontSize();
+
+  // ✅ HTTPS চেক ও ওয়ার্নিং
+  if(!isSecureContext()){
+    console.warn('⚠️ HTTP-তে চলছে — কল ফিচার কাজ করবে না। HTTPS লিংক ব্যবহার করুন।');
+    setTimeout(()=>{showToast('ℹ️ কল ফিচারের জন্য HTTPS প্রয়োজন','warn');},2000);
+  }else{
+    console.log('✅ HTTPS — সব ফিচার সক্রিয়');
+  }
+
   const r=document.getElementById('fontSizeRange');if(r)r.value=state.settings.fontSize;
   state.sessionId=Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b=>b.toString(16).padStart(2,'0')).join('');
   groups=getGroups();
@@ -2110,8 +2199,12 @@ document.addEventListener('DOMContentLoaded',async()=>{
   await renderContactList('');
   updateCallHistoryUI();
 
-  /* Init PeerJS — প্রস্তুত হওয়ার পরেই কল করা যাবে */
-  initPeer().then(()=>console.log('✅ PeerJS প্রস্তুত'));
+  // PeerJS প্রস্তুত (silently)
+  if(isSecureContext()){
+    initPeer().then(()=>console.log('✅ PeerJS প্রস্তুত'));
+  }else{
+    console.log('⏸️ PeerJS স্কিপ (HTTPS নেই)');
+  }
 
   enableBlurOnBlur();
   enableClipboardGuard();
